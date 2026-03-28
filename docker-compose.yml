@@ -10,6 +10,7 @@ services:
       SPRING_DATASOURCE_URL: jdbc:mysql://db-mysql:3306/demo_docker_db?useSSL=false&allowPublicKeyRetrieval=true
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: root
+      SQL_INIT_MODE: always
 
   db-mysql:
     image: mysql:8.0

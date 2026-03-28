@@ -30,21 +30,43 @@ jobs:
           tags: ${{ secrets.DOCKER_USERNAME }}/springboot-app:latest
 
       - name: Triển khai lên DevOps Classroom
+        env:
+          REPO: ${{ secrets.DOCKER_USERNAME }}/springboot-app
+          DEPLOY_URL: ${{ secrets.DEPLOY_URL }}
+          CONTAINER_PORT: "8080"
         run: |
-          REPO="sen1008/springboot-app"
-          CONTAINER_PORT=80
-          RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "${{ secrets.DEPLOY_URL }}?repo=$REPO&tag=latest&slot=3&container_port=$CONTAINER_PORT&strict_container_port=0")
-          BODY=$(echo "$RESPONSE" | sed "$d")
-          CODE=$(echo "$RESPONSE" | tail -n1)
-          echo "Webhook HTTP: $CODE"
-          if [ "$CODE" -lt 200 ] || [ "$CODE" -ge 300 ]; then
-            echo "Deploy thất bại. Xem chi tiết trong nhóm log bên dưới."
-            echo "::group::Chi tiết webhook JSON"
+          set -euo pipefail
+
+          attempt=1
+          max_attempts=3
+
+          while [ "$attempt" -le "$max_attempts" ]; do
+            echo "Gửi deploy webhook (lần $attempt/$max_attempts)..."
+
+            RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "$DEPLOY_URL?repo=$REPO&tag=latest&slot=3&container_port=$CONTAINER_PORT&strict_container_port=1")
+            BODY=$(echo "$RESPONSE" | sed '$d')
+            CODE=$(echo "$RESPONSE" | tail -n1)
+
+            echo "Webhook HTTP: $CODE"
+            echo "::group::Chi tiết webhook JSON (attempt $attempt)"
             echo "$BODY" | python3 -m json.tool 2>/dev/null || echo "$BODY"
             echo "::endgroup::"
+
+            if [ "$CODE" -ge 200 ] && [ "$CODE" -lt 300 ]; then
+              echo "Deploy thành công."
+              exit 0
+            fi
+
+            if [ "$CODE" = "524" ] && [ "$attempt" -lt "$max_attempts" ]; then
+              echo "Nhận 524 (gateway timeout). Đợi 15s rồi thử lại..."
+              sleep 15
+              attempt=$((attempt + 1))
+              continue
+            fi
+
+            echo "Deploy thất bại với HTTP $CODE."
             exit 1
-          fi
-          echo "Deploy thành công."
-          echo "::group::Chi tiết webhook JSON"
-          echo "$BODY" | python3 -m json.tool 2>/dev/null || echo "$BODY"
-          echo "::endgroup::"        
+          done
+
+          echo "Deploy thất bại sau $max_attempts lần thử."
+          exit 1
